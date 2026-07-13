@@ -8,6 +8,7 @@ package harness
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -41,7 +42,8 @@ func Run(t *testing.T, s Scenario) {
 	t.Helper()
 	t.Logf("scenario: %s", s.Name)
 
-	workDir, err := os.MkdirTemp("", t.Name())
+	// Subtest names contain "/", which is illegal in a MkdirTemp pattern.
+	workDir, err := os.MkdirTemp("", strings.ReplaceAll(t.Name(), "/", "_"))
 	if err != nil {
 		t.Fatalf("Run: create work dir: %v", err)
 	}
