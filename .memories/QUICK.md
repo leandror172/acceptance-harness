@@ -3,9 +3,10 @@
 *Working memory for the repo. Injected into agents. Keep under 30 lines.*
 
 ## Status
-v0.1.0 published (2026-07-13, public GitHub, MIT). Seeded from career-search's
-de-domained copy; 30 unit tests green, vet/gofmt clean. career-search repointed
-(TC-EXT closed, 65 tests green). **Next consumer: expense-reporter migration**
+v0.1.1 published (2026-07-13, public GitHub, MIT; v0.1.0 + go directive 1.24→1.25).
+Seeded from career-search's de-domained copy; 30 unit tests green, vet/gofmt clean.
+career-search repointed (TC-EXT closed, 65 tests green, on v0.1.1 / go 1.25.5).
+**Next consumer: expense-reporter migration**
 (Session B — plan §5 in expenses repo `.claude/plans/harness-extraction-plan.md`).
 No v1.0.0 until that migration shakes the API.
 
