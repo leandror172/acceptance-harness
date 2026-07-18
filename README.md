@@ -76,9 +76,12 @@ func TestMain(m *testing.M) {
     if err != nil {
         panic(err)
     }
-    defer os.RemoveAll(filepath.Dir(bin))
     binaryPath = bin
-    os.Exit(m.Run())
+
+    // Not deferred: os.Exit skips defers.
+    code := m.Run()
+    os.RemoveAll(filepath.Dir(bin))
+    os.Exit(code)
 }
 ```
 

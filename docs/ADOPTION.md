@@ -23,15 +23,37 @@ your-repo/
     setup_test.go       # TestMain: build the binary once
     <feature>_test.go   # scenarios + their then*/given* helpers
     actions/            # When: how to run your CLI
-    verify/             # Then: domain assertions (yours)
+    expect/             # Then: domain assertions (yours) — pick your own name
     fixtures/           # per-scenario fixture dirs
 ```
 
-`harness` and the generic `verify` come from the library; the three domain
-directories stay yours. The dividing line: *"how to drive and assert a CLI
-generically"* is library; *"what this CLI's bytes mean"* is yours. Domain
-verifiers that parse your file formats should import your internal packages
-and parse them exactly as the CLI does — never re-implement the parsing.
+`harness` and the generic `verify` come from the library; the domain directories
+stay yours. The dividing line: *"how to drive and assert a CLI generically"* is
+library; *"what this CLI's bytes mean"* is yours. Domain verifiers that parse
+your file formats should import your internal packages and parse them exactly as
+the CLI does — never re-implement the parsing.
+
+**Give your domain assertions a package name that isn't `verify`.** The library
+owns `verify`, and your scenarios import both packages in the same file:
+
+```go
+Then: []func(*harness.Context){
+    verify.CommandSucceeded(),              // library: generic
+    expect.LedgerBalances("ledger.jsonl"),  // yours: domain
+},
+```
+
+Two same-named packages would force an alias in every file that asserts anything.
+Name it for what it is (`expect`) or after your domain (`tracker`, `ledger`).
+Both current consumers do this: career-search uses `tracker`, expense-reporter
+uses `expect`.
+
+Migrating an existing suite whose own package is called `verify`? The rename is
+the bulk of the work and it is cheaper than it looks: only the call sites of
+*your* verifiers change. Any name the library also defines (`CommandSucceeded`,
+`OutputContains`, `OutputFileExists`, …) keeps its `verify.` prefix and resolves
+to the library's — so delete your duplicates first and let the compiler show you
+what is genuinely yours.
 
 ## 3. The build tag is yours, not the library's
 
@@ -77,9 +99,13 @@ func TestMain(m *testing.M) {
         fmt.Fprintln(os.Stderr, "TestMain: build:", err)
         os.Exit(1)
     }
-    defer os.RemoveAll(filepath.Dir(bin))
     binaryPath = bin
-    os.Exit(m.Run())
+
+    // Not deferred: os.Exit skips defers, so a deferred cleanup here would never
+    // run and every suite run would leak its binary dir under /tmp.
+    code := m.Run()
+    os.RemoveAll(filepath.Dir(bin))
+    os.Exit(code)
 }
 ```
 
