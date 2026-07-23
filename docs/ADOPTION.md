@@ -100,6 +100,7 @@ func TestMain(m *testing.M) {
         os.Exit(1)
     }
     binaryPath = bin
+    harness.UseBinary(bin) // every scenario gets ctx.BinaryPath for free
 
     // Not deferred: os.Exit skips defers, so a deferred cleanup here would never
     // run and every suite run would leak its binary dir under /tmp.
@@ -109,8 +110,35 @@ func TestMain(m *testing.M) {
 }
 ```
 
-Every test file in the package shares `binaryPath`; each scenario's Given
-assigns it to `ctx.BinaryPath`.
+`UseBinary` makes `Run` assign `ctx.BinaryPath` for every scenario, so no Given
+needs to. A suite exercising more than one binary sets `Scenario.Binary` to
+override it per scenario. Both are seeded *before* Given runs, so a Given that
+assigns `ctx.BinaryPath` itself still wins — pre-v1.1 suites are unaffected.
+
+## 4b. Scenario plumbing the engine owns
+
+These exist so your Given helpers can be about your domain rather than about
+wiring the context:
+
+| Instead of a Given doing… | Use |
+|---|---|
+| `ctx.BinaryPath = binaryPath` | `harness.UseBinary(bin)` once in `TestMain` |
+| `ctx.FixtureDir = fixDir` | `Scenario.Fixture: fixDir` |
+| assembling several setup steps into one body | `harness.Events(a(), b(), c())` |
+
+```go
+harness.Run(t, harness.Scenario{
+    Name:    "queued item is exported with its chosen category",
+    Fixture: fixDir,
+    Given:   itemQueuedForExport(),   // takes no fixture path, sets no binary path
+    When:    runExport(),
+    Then:    slices.Concat(commandSucceeded(), itemExportedAs("Books")),
+})
+```
+
+Setup that must accumulate across composed events — config keys being the common
+case — belongs in `ctx.State`, flushed exactly once via `ctx.BeforeWhen`. See the
+trap in [PATTERNS.md](PATTERNS.md).
 
 ## 5. Actions: your When functions
 

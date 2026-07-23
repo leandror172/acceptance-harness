@@ -15,10 +15,11 @@ A scenario is data, not a framework subclass:
 
 ```go
 harness.Run(t, harness.Scenario{
-    Name:  "tracked role is reported with its current status",
-    Given: roleTrackedWithStatus("applied"),   // set up fixture state
-    When:  runGet("101", "--json"),            // invoke the binary once
-    Then: slices.Concat(                       // composable assertions
+    Name:    "tracked role is reported with its current status",
+    Fixture: fixDir,                            // engine assigns ctx.FixtureDir
+    Given:   roleTrackedWithStatus("applied"),  // set up fixture state
+    When:    runGet("101", "--json"),           // invoke the binary once
+    Then: slices.Concat(                        // composable assertions
         commandSucceeded(),
         statusReportedAs("applied"),
     ),
@@ -26,11 +27,16 @@ harness.Run(t, harness.Scenario{
 ```
 
 - **Given** `func(*Context)` — prepare state: copy a fixture tree into the work
-  dir, seed files, set env.
+  dir, seed files, set env. Compose several with `harness.Events(...)`.
 - **When** `func(*Context)` — run the CLI under test, capture exit code,
   stdout/stderr, and named output artifacts.
 - **Then** `[]func(*Context)` — assertions, each scoped to one concern,
   composed with `slices.Concat` at the call site.
+
+Scenario plumbing belongs to the engine, not to your Givens: `Scenario.Fixture`
+seeds `ctx.FixtureDir`, and `harness.UseBinary(path)` — called once in `TestMain` —
+seeds `ctx.BinaryPath`. Both are optional and seeded *before* Given runs, so a
+suite that wires them by hand keeps working unchanged.
 
 The conventions that keep suites legible at scale — event-style Given names,
 result-named Then helpers, no raw `verify.*` calls inside a `Then:` block — are
@@ -41,7 +47,7 @@ part of this repo; the code exists to serve them.
 
 | Package | Contents |
 |---|---|
-| `harness` | `Context`, `Scenario`, `Run`; fixture plumbing (`CopyTreeToWorkDir`, `CopyFixtureToWorkDir`, `DiscoverFixtures`, `SeedFileFromFixture`, `FixtureConfig`); `BuildBinary` / `FindModuleRoot` for the build-once `TestMain` pattern |
+| `harness` | `Context`, `Scenario`, `Run`; scenario plumbing (`Scenario.Fixture`, `UseBinary`, `Events`, `Context.State` + `Context.BeforeWhen`); fixture plumbing (`CopyTreeToWorkDir`, `CopyFixtureToWorkDir`, `DiscoverFixtures`, `SeedFileFromFixture`, `FixtureConfig`); `BuildBinary` / `FindModuleRoot` for the build-once `TestMain` pattern |
 | `verify` | Generic Then base: exit code + output (`CommandSucceeded/Failed`, `OutputContains/...`), JSON with dotted-path + array-index navigation (`JSONFieldEquals("app.items.0.status", ...)`), file state (`FileUnchanged`, `FileAbsent`, `WorkFileExists`, `FileContains/NotContains`) |
 | `docs` | [PATTERNS.md](docs/PATTERNS.md) — the methodology; [ADOPTION.md](docs/ADOPTION.md) — wiring a consumer repo step by step; [LTG-PATH.md](docs/LTG-PATH.md) — adoption sketch for a pipeline-shaped consumer |
 
