@@ -50,6 +50,100 @@ functions *called by* Given helpers — they just must never appear as the
 system evolves as a sequence of recorded events; event-named Givens make the
 test description match that reality.
 
+### The call site should read as a sentence
+
+A helper and its argument should form one grammatical phrase — slot the argument
+into the grammar instead of letting it dangle after an already-complete name. End
+the name with the word that receives it (`As`, `To`, …):
+
+| Reads as a sentence | Argument dangles |
+|---|---|
+| `defaultYearConfiguredAs(2024)` | `defaultYearConfigured(2024)` |
+| `flagYearResolvedDateTo("15/04/2024")` | `dateResolvedFromFlagYear("15/04/2024")` |
+
+A name ending in a noun can never absorb its argument; one ending in a preposition
+always can. Plumbing arguments such as a fixture path are exempt — they are not
+part of the sentence.
+
+### Duplicate bodies are the tell
+
+A mechanism name describes *how the context was assembled*, so two different
+assembly stories can hide one identical fact and nobody notices. In one real suite
+`classifierForJSON` and `classifierWithDataDir` were byte-identical, and three
+separate `*ReadyForLogAppend` helpers were the same body a third time — 27 helper
+bodies for 3 actual preconditions.
+
+Event names collide loudly when they mean the same thing. Where a scenario genuinely
+needs its own name, make it a **one-line wrapper** over the shared Given, never a
+second copy of the body:
+
+```go
+func knownExpenseBatchSubmitted(fixDir string) func(*harness.Context) {
+    return expenseBatchSubmitted(fixDir)   // the wrapper's value IS its name
+}
+```
+
+Two smells worth grepping for: a Given naming a **command flag**
+(`expensesReadyForDryRun` — `--dry-run` is a property of the When, never a
+precondition), and a Given that accepts a fixture path and **never uses it**. Go
+does not flag an unused function parameter, so the second hides indefinitely.
+`Scenario.Fixture` removes the need for that parameter altogether.
+
+## Composing a Given from events
+
+`Scenario.Given` holds one function while `Scenario.Then` holds a slice. That
+asymmetry pushes suites toward one fat body per scenario: a Given needing three
+facts has no way to say so except a new function containing all three, so every
+combination grows its own copy — which is how the 27-bodies case above happened.
+
+`harness.Events(...)` folds a sequence into the single function the field takes:
+
+```go
+func taxonomyPublishedWithCorpus(fixDir string) func(*harness.Context) {
+    return harness.Events(
+        trainingCorpusRecorded(),
+        taxonomyPublished(fixDir),
+        logsConfigured(),
+    )
+}
+```
+
+Compose **inside** helper definitions, not at the `Given:` call site. The scenario
+should still read as one domain sentence; a six-item setup checklist in the
+scenario is plumbing leaking upward.
+
+Where a Given varies by *content* rather than by *which facts hold*, parameterize
+instead — one implementation, several named wrappers differing only in data:
+
+```go
+func logSeededWith(fixDir string, rows []seedRow) func(*harness.Context) { ... }
+
+func oneRowAlreadyLogged(fixDir string) func(*harness.Context) {
+    return logSeededWith(fixDir, []seedRow{{item: "Netflix", ...}})
+}
+```
+
+### The trap: composed events must not each rewrite the same file
+
+If two events each write your CLI's config file, the second `os.WriteFile` wins and
+silently drops the first's keys. The scenario then fails somewhere far away, with a
+missing config value and nothing pointing at the cause.
+
+Accumulate in `ctx.State` and flush **once** with `ctx.BeforeWhen`, which runs after
+every Given event and before the When:
+
+```go
+func SetupBinaryConfig(ctx *harness.Context, cfg map[string]any) {
+    merged, ok := ctx.State[configKey].(map[string]any)
+    if !ok {
+        merged = map[string]any{}
+        ctx.State[configKey] = merged
+        ctx.BeforeWhen(func() { writeConfigFile(ctx, merged) })   // exactly one write
+    }
+    maps.Copy(merged, cfg)
+}
+```
+
 ## Then composition: `slices.Concat` of one-concern helpers
 
 Then helpers return `[]func(*harness.Context)` and are combined at the call
@@ -144,6 +238,9 @@ live; suites that only test the forward direction miss them.
 - **Skip guards mask absent coverage.** A helper that `t.Skip`s when an
   optional resource is missing can silently skip forever. Audit what actually
   *ran*, not what passed.
+- **Setup that rewrites a whole file breaks composition.** Two Given events each
+  writing your config file leave only the second one's keys. Accumulate in
+  `ctx.State`, flush once in `ctx.BeforeWhen`.
 - **Now()-dependent fixtures are time bombs.** If the CLI fills in the current
   year/date for partial inputs, fixtures with partial dates produce
   expectations that expire at the next year boundary. Pin absolute dates in
